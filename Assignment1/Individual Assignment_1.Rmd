@@ -1,0 +1,328 @@
+---
+title : "" 
+output: html_notebook
+---
+***
+<center>
+## Individual Assignment #1: ETS Laboratory
+#### Due: Nov. 4 (Before Class)
+#### (40 points)
+</center>
+***
+
+You have been hired by a company in the hospitality business to help them plan the staffing levels for the following year.  The company operates resorts in three regions of the New South Wales of Australia; the three regions are the **Sydney**, the **South Coast** and the **North Coast NSW** areas.
+
+As it takes time to hire new personnel and it is necessary for any new employee to undergo a detailed training program before starting to work, the company needs to plan its personnel requirements one year in advance.  Furthermore, as it is possible for the company to transfer qualified personnel between regions, they are interested only in an aggregate forecast of their demand 
+
+As the company caters to **Holiday** travelers, and it has been growing faster than the market (i.e., it has been gaining market share), the Chief Commercial Officer estimates that next year they will have respectively (3%, 4%, 4%) of only the **Holiday** travelers in the (**Sydney**, **South Coast**, and **North Coast NSW**) regions respectively.  Furthermore based on prior experience they anticipate that each traveler will stay respectively (5,2,2) hotel-nights in (**Sydney**, **South Coast**, and **North Coast NSW**) respectively
+
+To forecast demand in hotel-nights use the **tourism** data set in **fpp3**.  This data set reports the quarterly trips (in thousands) to different destinations, and as this data set has a *tsibble* structure, you can use **tidyverse** functions to subset the time-series of interest.  
+
+For the purposes of this assignment ignore all data before **2008 Q1** and use the data from **2008 Q1** through **2016 Q4** as a traing set and the four quarters of **2017** as a testing set.
+
+If you need to dust-off the tidyverse functions, a good reference is the electronic book [*R for Data Science*](https://r4ds.had.co.nz/)  or alternatively, if you only need a quick refresher of the **dplyr** and **tidyr**   functions you can use the following [*Data Wrangling Cheat Sheet*](https://rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatsheet.pdf)
+
+
+### Part I.  Model-Aggregation Forecast 
+
+1. After subsetting for the time-series of interest in the **tourism** data set (a *tsibble*), add to the restricted set the corresponding demand time-series, by creating a column called *Demand*  for each of the corresponding regions of interest.  The *Demand* column should contain the hotel-nights (in thousands) corresponding to each of the *Trips* observations. After creating the *Demand* column, fit automatically the best **ETS** model for each *Demand* time-series. In addition to the automatic fit, one of your colleagues suggest that you should try the "AAM" model and the "AAdM" models as they may be preferred under the *BIC* criterion.  Report for each region the best model as well as the corresponding *AICc* and *BIC*. What is the best model according to the information criteria?
+
+```{r}
+library(fpp3)
+tourism
+
+
+tourism %>% 
+        filter(Quarter >= yearquarter("2008 Q1")) %>%
+        filter(Purpose == "Holiday" & State == "New South Wales") %>%
+        filter(Region %in% c("North Coast NSW","South Coast","Sydney")) %>%
+        mutate(Demand = case_when(
+        Region == "Sydney" ~ 0.03*Trips*5,
+        Region == "South Coast" ~ 0.04*Trips*2,
+        Region == "North Coast NSW" ~ 0.04*Trips*2
+  )) -> D
+
+# Break into Training and Testing sets.
+
+DTR <- D %>% 
+  filter(Quarter <= yearquarter("2016 Q4")) # Train set
+
+DTE <- D %>% 
+  filter(Quarter >= yearquarter("2017 Q1")) # Test set
+
+
+DTR_NC <- DTR %>% 
+  filter(Region == "North Coast NSW")
+
+DTE_NC <- DTE %>% 
+  filter(Region == "North Coast NSW")
+
+DTR_SC <- DTR %>% 
+  filter(Region == "South Coast")
+
+DTE_SC <- DTE %>% 
+  filter(Region == "South Coast")
+
+DTR_Sy <- DTR %>% 
+  filter(Region == "Sydney")
+
+DTE_Sy <- DTE %>% 
+  filter(Region == "Sydney")
+
+DTR_grouped <- DTR %>%
+              group_by(State, Purpose) %>%
+              summarize(Demand = sum(Demand))
+
+DTE_grouped <- DTE %>%
+               group_by(State, Purpose) %>%
+               summarize(Demand = sum(Demand))
+```
+
+```{r}
+fit <- DTR %>% 
+      model(auto = ETS(Demand),
+      SES = ETS(Demand ~ error("A") + trend("N") + season("N")),
+      AAM = ETS(Demand ~ error("A") + trend("A") + season("M")), 
+      AAdM = ETS(Demand ~ error("A") + trend("Ad") + season("M")))
+
+fit %>% glance()   
+
+fc <- fit %>% forecast(h = 4)
+
+fit_1 <- DTR %>% model(auto = ETS(Demand))
+
+######## 1 ##############
+
+# North Coast NSW
+
+fit_NC <- DTR_NC %>% 
+          model(auto = ETS(Demand),
+          SES = ETS(Demand ~ error("A") + trend("N") + season("N")),
+          AAM = ETS(Demand ~ error("A") + trend("A") + season("M")), 
+          AAdM = ETS(Demand ~ error("A") + trend("Ad") + season("M")))
+
+fit_NC %>% glance()   
+
+fit_NC %>% select(auto) %>% report()
+
+# The best model for North Coast NSW region is auto.
+# AIC = 254.4963
+# AICc = 258.4963      
+# BIC = 265.5809 
+
+
+# South Coast
+  
+fit_SC <- DTR_SC %>% 
+          model(auto = ETS(Demand),
+          SES = ETS(Demand ~ error("A") + trend("N") + season("N")),
+          AAM = ETS(Demand ~ error("A") + trend("A") + season("M")), 
+          AAdM = ETS(Demand ~ error("A") + trend("Ad") + season("M")))
+
+
+fit_SC %>% glance()
+
+fit_SC %>% select(auto) %>% report()
+
+# The best model for South Coast region is auto.
+# AIC = 235.4490  
+# AICc = 239.4490       
+# BIC = 246.5336 
+
+# Sydney
+  
+fit_Sy <- DTR_Sy %>% 
+          model(auto = ETS(Demand),
+          SES = ETS(Demand ~ error("A") + trend("N") + season("N")),
+          AAM = ETS(Demand ~ error("A") + trend("A") + season("M")), 
+          AAdM = ETS(Demand ~ error("A") + trend("Ad") + season("M")))
+
+fit_Sy %>% glance()
+
+fit_Sy %>% select(auto) %>% report()
+
+# The best model for Sydney region is auto.
+# AIC = 287.8126    
+# AICc = 291.8126        
+# BIC = 298.8972 
+```
+
+
+2. Using the best model selected in (1), prepare a forecast for the four quarters of 2017 and report for each time series the in-sample (training) MAPE, and out-of-sample (testing) MAPE.  
+
+```{r}
+# North Coast NSW
+
+fit_NC_aug <- fit_NC %>% augment()
+
+fit_NC_aug1 <- fit_NC_aug %>% filter(.model == "auto")
+
+fit_NC_aug1 %>% autoplot(.vars = Demand, col = "black") + geom_point(data = fit_NC_aug1, mapping = aes(y = .fitted))
+
+fc_NC <- fit_NC %>% forecast(h = 4)
+
+fc_NC %>% filter(.model == "auto") %>% autoplot(DTR_NC) +
+          geom_point(data = fit_NC_aug1, mapping = aes(y = .fitted), col = "blue") +
+          geom_point(data = DTE_NC, mapping = aes(y = Demand), col = "red")
+
+rbind(fit_NC %>% accuracy(), 
+      fc_NC %>% accuracy(data = DTE_NC))
+
+# In-sample (training) MAPE = 8.94
+# Out-of-sample (testing) MAPE = 7.42
+
+```
+
+```{r}
+
+# South Coast
+
+fit_SC_aug <- fit_SC %>% augment()
+
+fit_SC_aug1 <- fit_SC_aug %>% filter(.model == "auto")
+
+fit_SC_aug1 %>% autoplot(.vars = Demand, col = "black") + geom_point(data = fit_SC_aug1, mapping = aes(y = .fitted))
+
+fc_SC <- fit_SC %>% forecast(h = 4)
+
+fc_SC %>% filter(.model == "auto") %>% autoplot(DTR_SC) +
+          geom_point(data = fit_SC_aug1, mapping = aes(y = .fitted), col = "blue") +
+          geom_point(data = DTE_SC, mapping = aes(y = Demand), col = "red")
+
+rbind(fit_SC %>% accuracy(), 
+      fc_SC %>% accuracy(data = DTE_SC))
+
+# In-sample (training) MAPE = 8.45
+# Out-of-sample (testing) MAPE = 6.94
+```
+
+
+
+```{r}
+# Sydney
+
+fit_Sy_aug <- fit_Sy %>% augment()
+
+fit_Sy_aug1 <- fit_Sy_aug %>% filter(.model == "auto")
+
+fit_Sy_aug1 %>% autoplot(.vars = Demand, col = "black") + geom_point(data = fit_Sy_aug1, mapping = aes(y = .fitted))
+
+fc_Sy <- fit_Sy %>% forecast(h = 4)
+
+fc_Sy %>% filter(.model == "auto") %>% autoplot(DTR_Sy) +
+          geom_point(data = fit_Sy_aug1, mapping = aes(y = .fitted), col = "blue") +
+          geom_point(data = DTE_Sy, mapping = aes(y = Demand), col = "red")
+
+rbind(fit_Sy %>% accuracy(), 
+      fc_Sy %>% accuracy(data = DTE_Sy))
+
+# In-sample (training) MAPE = 7.43
+# Out-of-sample (testing) MAPE = 8.01
+
+```
+
+
+3. Add the three forecasts of each region for the selected model to obtain the total forecast and compute the fitted (training) MAPE and the testing MAPE.  Compare the MAPEs of the aggregate forecasts with those of the regional forecasts.  Which ones are larger/smaller? Explain why did you obtain these results.
+
+```{r}
+
+fc_total <- rbind(fc_NC %>% filter(.model == "auto"), 
+            fc_SC %>% filter(.model == "auto"), fc_Sy %>% filter(.model == "auto"))
+
+#fc_total1 <- fc_total %>%
+#             group_by(State, Purpose) %>%
+#             summarize(Demand = sum(Demand))
+
+#fit1 <- fit %>%
+#        group_by(State, Purpose) %>%
+#        summarize(Demand = sum(Demand))
+
+
+rbind(fit_1 %>% accuracy(), 
+      fc_total %>% accuracy(data = DTE))
+
+
+
+fit_agg <- DTR_grouped %>% model(auto = ETS(Demand))
+
+fit_agg %>% glance()   
+
+fc_agg <- fit_agg %>% forecast(h = 4)
+
+rbind(fit_agg %>% accuracy(), 
+      fc_agg %>% accuracy(data = DTE_grouped))
+
+
+# In-sample (training) MAPE = 4.63
+# Out-of-sample (testing) MAPE = 5.16
+# The MAPEs of the aggregate forecasts are smaller than the regional forecasts
+
+```
+
+### Part II. Data-Aggregation Forecast
+
+4. Now aggregate the region-specific demand data to compile an aggregate demand time series, the aggregated demand into traing and testing time-series, and fit the automatic model, plus the two models you fitted in Question (1)  What is the best model for the aggregate data?
+
+```{r}
+fit_agg <- DTR_grouped %>% 
+           model(auto = ETS(Demand),
+           SES = ETS(Demand ~ error("A") + trend("N") + season("N")),
+           AAM = ETS(Demand ~ error("A") + trend("A") + season("M")), 
+           AAdM = ETS(Demand ~ error("A") + trend("Ad") + season("M")))
+
+fit_agg %>% glance()
+
+fit_agg %>% select(auto) %>% report()
+
+# The best model for aggregate data is auto.
+# AIC = 306.8655   
+# AICc = 310.8655         
+# BIC = 317.9501 
+```
+
+5. Using the best model selected in (4), prepare a forecast for the four quarters of 2017 and report the in-sample (training) MAPE, and out-of-sample (testing) MAPE. 
+
+
+```{r}
+
+fit_agg_aug <- fit_agg %>% augment()
+
+fit_agg_aug1 <- fit_agg_aug %>% filter(.model == "auto")
+
+fit_agg_aug1 %>% autoplot(.vars = Demand, col = "black") + geom_point(data = fit_agg_aug1, mapping = aes(y = .fitted))
+
+fc_agg <- fit_agg %>% forecast(h = 4)
+
+fc_agg %>% filter(.model == "auto") %>% autoplot(DTR_grouped) +
+           geom_point(data = fit_agg_aug1, mapping = aes(y = .fitted), col = "blue") +
+           geom_point(data = DTE_grouped, mapping = aes(y = Demand), col = "red")
+
+rbind(fit_agg %>% accuracy(), 
+      fc_agg %>% accuracy(data = DTE_grouped))
+
+# In-sample (training) MAPE = 4.63
+# Out-of-sample (testing) MAPE = 5.16
+
+```
+
+
+### Part III. Forecasting Model Analysis and Aggregate Forecast
+
+6. Using the best modeling approach (model-aggregation vs data-aggregation) and the best ETS model(s) selected, and using all the data available fit the model(s), report the model parameters, the in-sample MAPE, and plot the forecast for the four quarters of 2018.
+
+
+7. As it is very costly to be short of personnel, we need to plan the staffing levels according to a forecast that we anticipate it will not be exceeded with a probability of 99%.  What are these quarterly demand levels?
+
+8. Sometimes not all the data availalble is representative of the recent and future business conditions.  Redefine the training data set *** DTR*** to exclude all data older than 2010 and reevaluate your recommendation in Questions (6) and (7).
+
+```{r}
+DTR <- D %>% 
+  filter(Quarter >= yearquarter("2010 Q1"),
+         Quarter <= yearquarter("2016 Q4"))
+
+
+```
+
+
+
+
