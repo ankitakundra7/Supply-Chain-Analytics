@@ -1,0 +1,170 @@
+---
+title: "Individual Assignment #3"
+output: html_notebook
+---
+***
+<center> 
+### Regression with ARIMA Errors Laboratory.
+#### (Total 40 pts.)
+#### Due: Dec. 2 (before midnight)
+#### Ankita Kundra
+</center>
+***
+
+As a newly minted MSBA you start working for a large resort hotel managing 1,877 rooms.  A tour operator that you freqently do business with has requested a block of 60 rooms for Aug. 22.  As this operator will pay a discounted rate for each room, your manager is uncertain if she should give this block of rooms to the tour operator, and she  has asked you to provide model-based support for this decision.
+
+Although the price is discounted and it may prevent you from selling some of these rooms at the regular price, if you reject this request, any empty rooms will not generate any reveue and you would have incurred an opportunity cost by not selling these rooms.
+
+After judicious consideration of the economic tradeoffs in the Newsvendor model, you and your manager detrmine that the block should be assigned to the tour operator only if the probability of your organic demand (excluding the room block in question) is smaller than 67% (i.e., you are on track to achieve a 67% service level).
+
+To address the booking question you examine the following data set and proceed to develop a demand forecast model.
+
+
+
+The data set **Booking Exercise.csv** consists of daily observations of the following six variables:
+
+* **DATE**: Calendar date corresponding to each observation.
+
+* **DOW**: Index (1-7) to indicate the day of the week each **DATE** corresponds to. This is redundant and it is eliminated below.
+
+* **DEMAND**: Number of rooms actually sold on each **DATE**.
+
+* **TUESDAY.BOOK**: Number of rooms booked on the Tuesday of the previous week for each day of the forthcoming week.  This variable is used as an input to inform the forecasts of **DEMAND** for each day of the forthcoming week.
+
+* **PICKUP.RATIO**: This is a calculated variable obtained as **PICKUP.RATIO = DEMAND/TUESDAY.BOOK** historically as **DEMAND** is observed. Because of this is a calculated relationship you can use either **PICKUP.RATIO** or **TUESDAY.BOOK** but you cannot use both variables simultaneously in a model to predict **DEMAND**. 
+
+* **DOW.INDEX**: This is a pre-calculated indicator of day-of-the-week demand intensity.  This is obtained by the Hotel using information beyond what it is contained in this data set.
+
+The code below reads the data set which includes up to the latest demand information (August 17) and prepares the data for the modeling process:
+
+```{r}
+library(fpp3)
+library(tseries)
+X <- read.csv("Booking Exercise.csv") %>%
+  mutate(DATE = ymd(DATE)) %>%
+  as_tsibble(index = DATE)
+
+
+Fcst.X <- X %>% filter(DATE >= ymd("2010-08-18"))
+X <- X %>% filter(DATE <= ymd("2010-08-17"))
+```
+
+
+1. (15 pt.) Fit (a) an ETS, (b) a plain ARIMA, (c) a linear regression model to predict **DEMAND** as a function of **TUESDAY.BOOK**, (c) a non-seasonal regression model with ARIMA errors using **TUESDAY.BOOK** and **DOW.INDEX** as explanatory variables, and (d) a seasonal regression model with ARIMA errors using only **TUESDAY.BOOK** as an explanatory variable.  You may use automatic model selection to fit an initial model, but especially in cases (c) and (d) you should modify the automatically fitted models when appropriate.
+
+```{r}
+D <- X
+
+# Examine Stationarity Visually
+D %>% ACF(DEMAND) %>% 
+  autoplot() + 
+  labs(title = "Demand")
+```
+```{r}
+D %>% PACF(DEMAND) %>% 
+  autoplot() + 
+  labs(title = "Demand")
+```
+
+```{r}
+D %>% features(DEMAND, unitroot_kpss)
+```
+
+```{r}
+D$DEMAND%>% adf.test()
+```
+Time Series is stationary since p value is small. Fitting models to the Demand data. Initially using auto values for d. and e. models.
+
+```{r}
+m <- D %>% model(ets_auto = ETS(DEMAND),
+         ma = ARIMA(DEMAND),
+        lr = TSLM(DEMAND ~ TUESDAY.BOOK),
+        NSA = ARIMA(DEMAND ~ TUESDAY.BOOK+ DOW.INDEX),
+        SA = ARIMA(DEMAND ~ TUESDAY.BOOK)
+        )
+m%>%select(NSA)%>%report()
+
+```
+
+```{r}
+m%>%select(SA)%>%report()
+```
+
+Modifying the fit for model d. and e. Will be using ARIMA(0,0,1) and ARIMA(0,0,1)(2,1,0) based on the previous output.
+
+```{r}
+m <- D %>% model(ets_auto = ETS(DEMAND),
+         ma = ARIMA(DEMAND),
+        lr = TSLM(DEMAND ~ TUESDAY.BOOK),
+        NSA = ARIMA(DEMAND ~ TUESDAY.BOOK+ DOW.INDEX+pdq(0,0,1)),
+        SA = ARIMA(DEMAND ~ TUESDAY.BOOK+pdq(0,0,1)+PDQ(2,1,0))
+        )
+```
+
+
+2. (5 pt.) Which of the models are valid?
+
+```{r}
+m %>% augment() %>%
+  features(.resid, ljung_box, lag = 10)
+
+```
+
+All models (except LR) have high p values for the Ljung box test, meaning that the residuals are independent and the models are valid.
+
+```{r}
+m %>% select(ets_auto) %>% gg_tsresiduals()
+```
+```{r}
+m %>% select(lr) %>% gg_tsresiduals()
+```
+
+```{r}
+m %>% select(ma) %>% gg_tsresiduals()
+```
+
+```{r}
+m %>% select(NSA) %>% gg_tsresiduals()
+```
+
+```{r}
+m %>% select(SA) %>% gg_tsresiduals()
+
+```
+
+3. (5 pt.) Using the information criteria (AICc and BIC) what is the best model?
+
+
+```{r}
+m %>% glance()%>%select(.model,AICc,BIC)
+
+```
+
+The linear regression model to predict DEMAND as a function of TUESDAY.BOOK and the seasonal regression model with ARIMA errors using only TUESDAY.BOOK as an explanatory variable are the two best models using AICc and BIC.
+
+4. (5 pt.) Use the **Fcst.X** data set created above to produce a demand forecast for the forthcoming week (i.e., Aug, 18 - 24) showing the default 80% and 90% confidence intervals.
+
+
+```{r}
+
+fc_best <- m %>% select(SA) %>%
+  forecast(new_data = Fcst.X) 
+fc_best%>%
+  autoplot() +
+  geom_line(D, mapping = aes(y = DEMAND))
+
+```
+
+5. (10 pt.) What is your recommendation for your manager regarding the tour operator block?  Should your manager sell the block of 60 rooms at a discounted price?  Justify your answer.
+
+
+```{r}
+fc_best %>%  hilo(level =c(95)) %>%
+  unpack_hilo("95%") %>%
+  select(DEMAND,"95%_lower", "95%_upper")
+  
+```
+  
+  67% of the total hotel capacity is approximately 1257 rooms. Looking at the forecast prediction for Aug 22nd, we see that the even the lower 5% bound of the prediction is 1444. Therefore there is a 95% chance that the organic demand on 22nd will exceed 1444. This is much higher than the 67% occupation level threshold decided.
+
+The long term customer might give us steady demand over long periods of time and may deserve a discount, however the associated costs of reduced price due to block booking may overpower the opportunity revenue that could have been gained.
